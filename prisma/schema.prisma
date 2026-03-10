@@ -1,0 +1,640 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Core Enums ───────────────────────────────────────────────────────
+
+enum MerchantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ApiKeyType {
+  SECRET
+  PUBLISHABLE
+}
+
+enum ApiKeyRole {
+  MERCHANT
+  PLATFORM_ADMIN
+}
+
+// ── Catalog / Pricing Enums ──────────────────────────────────────────
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PriceType {
+  ONE_TIME
+  RECURRING
+}
+
+enum PriceBillingInterval {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum CouponDuration {
+  ONCE
+  REPEATING
+  FOREVER
+}
+
+// ── Billing Core Enums ───────────────────────────────────────────────
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELED
+  UNPAID
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+  PAST_DUE
+}
+
+// ── Credit Notes / Adjustments Enums ─────────────────────────────────
+
+enum CreditNoteStatus {
+  ISSUED
+  VOID
+}
+
+enum AdjustmentType {
+  CREDIT
+  DEBIT
+}
+
+// ── Infrastructure Enums ─────────────────────────────────────────────
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum LedgerEntryStatus {
+  DRAFT
+  POSTED
+}
+
+enum LedgerLineDirection {
+  DEBIT
+  CREDIT
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+enum IdempotencyState {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Core Models (billing dependencies)
+// ═══════════════════════════════════════════════════════════════════════
+
+model Merchant {
+  id                 String               @id @default(cuid())
+  name               String
+  status             MerchantStatus       @default(ACTIVE)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  apiKeys            ApiKey[]
+  customers          Customer[]
+  products           Product[]
+  prices             Price[]
+  coupons            Coupon[]
+  promotionCodes     PromotionCode[]
+  taxRates           TaxRate[]
+  subscriptions      Subscription[]
+  invoices           Invoice[]
+  creditNotes        CreditNote[]
+  adjustments        Adjustment[]
+  ledgerAccounts     LedgerAccount[]
+  ledgerEntries      LedgerJournalEntry[]
+  ledgerLines        LedgerLine[]
+  webhookEndpoints   WebhookEndpoint[]
+  webhookDeliveries  WebhookDelivery[]
+  webhookAttempts    WebhookAttempt[]
+  idempotencyRecords IdempotencyRecord[]
+  events             Event[]
+  auditLogs          AuditLog[]
+
+  @@map("merchants")
+}
+
+model ApiKey {
+  id         String     @id @default(cuid())
+  merchantId String
+  name       String
+  keyType    ApiKeyType @default(SECRET)
+  role       ApiKeyRole @default(MERCHANT)
+  scopes     Json
+  keyPrefix  String
+  keyHash    String
+  isActive   Boolean    @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  merchant   Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, keyHash])
+  @@index([merchantId, createdAt])
+  @@map("api_keys")
+}
+
+model Customer {
+  id            String         @id @default(cuid())
+  merchantId    String
+  externalId    String?
+  email         String?
+  name          String?
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  merchant      Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  invoices      Invoice[]
+
+  @@unique([merchantId, externalId])
+  @@index([merchantId, createdAt])
+  @@map("customers")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Catalog / Pricing
+// ═══════════════════════════════════════════════════════════════════════
+
+model Product {
+  id          String        @id @default(cuid())
+  merchantId  String
+  name        String
+  description String?
+  status      ProductStatus @default(ACTIVE)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  merchant    Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  prices Price[]
+
+  @@index([merchantId, status])
+  @@index([merchantId, createdAt])
+  @@map("products")
+}
+
+model Price {
+  id              String                @id @default(cuid())
+  merchantId      String
+  productId       String
+  nickname        String?
+  type            PriceType             @default(ONE_TIME)
+  currency        String
+  unitAmount      Int
+  billingInterval PriceBillingInterval?
+  intervalCount   Int                   @default(1)
+  trialDays       Int?
+  isActive        Boolean               @default(true)
+  metadata        Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  merchant        Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  product         Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  subscriptionItems SubscriptionItem[]
+
+  @@index([merchantId, productId])
+  @@index([merchantId, createdAt])
+  @@map("prices")
+}
+
+model Coupon {
+  id               String         @id @default(cuid())
+  merchantId       String
+  name             String
+  amountOff        Int?
+  percentOff       Float?
+  currency         String?
+  duration         CouponDuration @default(ONCE)
+  durationInMonths Int?
+  maxRedemptions   Int?
+  timesRedeemed    Int            @default(0)
+  isActive         Boolean        @default(true)
+  redeemBy         DateTime?
+  metadata         Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  merchant         Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  promotionCodes PromotionCode[]
+
+  @@index([merchantId, createdAt])
+  @@map("coupons")
+}
+
+model PromotionCode {
+  id             String    @id @default(cuid())
+  merchantId     String
+  couponId       String
+  code           String
+  isActive       Boolean   @default(true)
+  maxRedemptions Int?
+  timesRedeemed  Int       @default(0)
+  expiresAt      DateTime?
+  restrictions   Json?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  merchant       Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  coupon         Coupon    @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, code])
+  @@index([merchantId, createdAt])
+  @@map("promotion_codes")
+}
+
+model TaxRate {
+  id           String   @id @default(cuid())
+  merchantId   String
+  displayName  String
+  description  String?
+  jurisdiction String?
+  percentage   Float
+  inclusive    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  merchant    Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@map("tax_rates")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Billing Core — Subscriptions / Invoices
+// ═══════════════════════════════════════════════════════════════════════
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  merchantId           String
+  customerId           String
+  status               SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  endedAt              DateTime?
+  trialStart           DateTime?
+  trialEnd             DateTime?
+  defaultPaymentMethod String?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  merchant             Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer             Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  items    SubscriptionItem[]
+  invoices Invoice[]
+
+  @@index([merchantId, customerId])
+  @@index([merchantId, status])
+  @@index([merchantId, createdAt])
+  @@map("subscriptions")
+}
+
+model SubscriptionItem {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  priceId        String
+  quantity       Int          @default(1)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  price          Price        @relation(fields: [priceId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId])
+  @@map("subscription_items")
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  merchantId     String
+  customerId     String
+  subscriptionId String?
+  number         String?
+  status         InvoiceStatus @default(DRAFT)
+  currency       String
+  subtotal       Int           @default(0)
+  tax            Int           @default(0)
+  total          Int           @default(0)
+  amountPaid     Int           @default(0)
+  amountDue      Int           @default(0)
+  dueDate        DateTime?
+  paidAt         DateTime?
+  voidedAt       DateTime?
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  merchant       Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  items       InvoiceItem[]
+  attempts    InvoiceAttempt[]
+  creditNotes CreditNote[]
+
+  @@unique([merchantId, number])
+  @@index([merchantId, customerId])
+  @@index([merchantId, status])
+  @@index([merchantId, createdAt])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int      @default(1)
+  unitAmount  Int
+  amount      Int
+  currency    String
+  priceId     String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model InvoiceAttempt {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  attemptNumber Int
+  amount        Int
+  status        String
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, attemptNumber])
+  @@index([invoiceId])
+  @@map("invoice_attempts")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Credit Notes / Adjustments
+// ═══════════════════════════════════════════════════════════════════════
+
+model CreditNote {
+  id         String           @id @default(cuid())
+  merchantId String
+  invoiceId  String
+  number     String?
+  status     CreditNoteStatus @default(ISSUED)
+  reason     String?
+  amount     Int
+  currency   String
+  voidedAt   DateTime?
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  merchant   Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  invoice    Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  lineItems CreditNoteLineItem[]
+
+  @@unique([merchantId, number])
+  @@index([merchantId, invoiceId])
+  @@index([merchantId, createdAt])
+  @@map("credit_notes")
+}
+
+model CreditNoteLineItem {
+  id           String     @id @default(cuid())
+  creditNoteId String
+  description  String
+  quantity     Int        @default(1)
+  unitAmount   Int
+  amount       Int
+  createdAt    DateTime   @default(now())
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+
+  @@index([creditNoteId])
+  @@map("credit_note_line_items")
+}
+
+model Adjustment {
+  id          String         @id @default(cuid())
+  merchantId  String
+  type        AdjustmentType
+  amount      Int
+  currency    String
+  description String?
+  reference   String?
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  merchant    Merchant       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@map("adjustments")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Infrastructure
+// ═══════════════════════════════════════════════════════════════════════
+
+model WebhookEndpoint {
+  id         String    @id @default(cuid())
+  merchantId String
+  url        String
+  secret     String
+  isActive   Boolean   @default(true)
+  eventTypes Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  merchant   Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  deliveries WebhookDelivery[]
+
+  @@index([merchantId, createdAt])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id                String                @id @default(cuid())
+  merchantId        String
+  webhookEndpointId String
+  eventType         String
+  payload           Json
+  status            WebhookDeliveryStatus @default(PENDING)
+  deliveredAt       DateTime?
+  nextAttemptAt     DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  merchant          Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  webhookEndpoint   WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+
+  attempts WebhookAttempt[]
+
+  @@index([merchantId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+model WebhookAttempt {
+  id             String          @id @default(cuid())
+  merchantId     String
+  deliveryId     String
+  attemptNumber  Int
+  requestBody    Json?
+  responseStatus Int?
+  responseBody   String?
+  errorMessage   String?
+  createdAt      DateTime        @default(now())
+  completedAt    DateTime?
+  merchant       Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  delivery       WebhookDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, attemptNumber])
+  @@index([merchantId, createdAt])
+  @@map("webhook_attempts")
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  merchantId String
+  type       String
+  entityType String
+  entityId   String
+  payload    Json
+  actorType  String?
+  actorId    String?
+  createdAt  DateTime @default(now())
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, entityType, entityId])
+  @@index([merchantId, type])
+  @@map("events")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  merchantId String
+  action     String
+  actorType  String
+  actorId    String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, entityType, entityId])
+  @@map("audit_logs")
+}
+
+model IdempotencyRecord {
+  id                  String           @id @default(cuid())
+  merchantId          String
+  route               String
+  idempotencyKey      String
+  requestHash         String
+  state               IdempotencyState @default(PENDING)
+  responseStatusCode  Int?
+  responseBody        String?
+  responseContentType String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  expiresAt           DateTime?
+  merchant            Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, route, idempotencyKey])
+  @@index([merchantId, createdAt])
+  @@map("idempotency_records")
+}
+
+model LedgerAccount {
+  id          String            @id @default(cuid())
+  merchantId  String
+  code        String
+  name        String
+  accountType LedgerAccountType
+  currency    String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  merchant    Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  lines LedgerLine[]
+
+  @@unique([merchantId, code])
+  @@index([merchantId, createdAt])
+  @@map("ledger_accounts")
+}
+
+model LedgerJournalEntry {
+  id          String            @id @default(cuid())
+  merchantId  String
+  reference   String?
+  description String?
+  status      LedgerEntryStatus @default(DRAFT)
+  postedAt    DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  merchant    Merchant          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  lines LedgerLine[]
+
+  @@index([merchantId, createdAt])
+  @@map("ledger_journal_entries")
+}
+
+model LedgerLine {
+  id             String              @id @default(cuid())
+  merchantId     String
+  journalEntryId String
+  accountId      String
+  direction      LedgerLineDirection
+  amount         Int
+  createdAt      DateTime            @default(now())
+  merchant       Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  journalEntry   LedgerJournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account        LedgerAccount       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, createdAt])
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@map("ledger_lines")
+}

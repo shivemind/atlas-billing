@@ -1,0 +1,4687 @@
+openapi: 3.1.0
+info:
+  title: Atlas Billing API
+  version: 0.2.0
+  description: Subscription billing — products, prices, coupons, subscriptions, invoices, and credit notes
+  contact:
+    name: AtlasPayments Team
+    url: https://github.com/shivemind/atlaspayments
+servers:
+  - url: http://localhost:3002
+    description: Local billing service. Override via Postman {{baseUrl}} environment variable.
+tags:
+  - name: Products
+    description: Product catalog management
+  - name: Prices
+    description: Price configuration for products
+  - name: Coupons
+    description: Coupon and discount management
+  - name: PromoCodes
+    description: Promotion code management
+  - name: TaxRates
+    description: Tax rate configuration
+  - name: Subscriptions
+    description: Subscription lifecycle management
+  - name: Invoices
+    description: Invoice lifecycle and payment collection
+  - name: InvoiceItems
+    description: Invoice line item management
+  - name: CreditNotes
+    description: Credit note issuance and application to invoices
+paths:
+  /api/v1/products:
+    get:
+      summary: List products
+      description: Returns a paginated list of products for the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Product
+        affectsLedger: false
+      operationId: listProducts
+      tags:
+        - Products
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: status
+          description: Filter by product status (active or archived).
+          schema:
+            type: string
+            enum:
+              - active
+              - archived
+      responses:
+        "200":
+          description: Paginated list of merchant products.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create product
+      description: Creates a new product in the merchant's catalog.
+      x-platform:
+        kind: resource
+        entity: Product
+        emitsEvents:
+          - product.created
+        affectsLedger: false
+      operationId: createProduct
+      tags:
+        - Products
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: Product display name.
+                description:
+                  type: string
+                  maxLength: 2000
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              basic:
+                value:
+                  name: Premium Plan
+                  description: Access to all premium features
+                  metadata:
+                    tier: premium
+      responses:
+        "201":
+          description: Product created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - product
+                properties:
+                  product:
+                    type: object
+              examples:
+                created:
+                  value:
+                    product:
+                      id: prod_abc123
+                      merchant_id: cmf1merchant123
+                      name: Premium Plan
+                      description: Access to all premium features
+                      status: active
+                      metadata:
+                        tier: premium
+                      created_at: 2026-03-01T10:00:00.000Z
+                      updated_at: 2026-03-01T10:00:00.000Z
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/products/{id}:
+    get:
+      summary: Get product by ID
+      description: Returns a single product scoped to the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Product
+        affectsLedger: false
+      operationId: getProductById
+      tags:
+        - Products
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Product found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - product
+                properties:
+                  product:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update product
+      description: Updates a product's name, description, or metadata. Cannot update archived products.
+      x-platform:
+        kind: transition
+        entity: Product
+        emitsEvents:
+          - product.updated
+        affectsLedger: false
+        stateChanges:
+          - metadata_updated
+      operationId: updateProduct
+      tags:
+        - Products
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  maxLength: 2000
+                  nullable: true
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Product updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - product
+                properties:
+                  product:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Product is archived.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Archive product
+      description: Archives a product (soft delete). Archived products cannot be updated.
+      x-platform:
+        kind: transition
+        entity: Product
+        stateChanges:
+          - active -> archived
+        emitsEvents:
+          - product.archived
+        affectsLedger: false
+      operationId: archiveProduct
+      tags:
+        - Products
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Product archived.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - product
+                properties:
+                  product:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Product is already archived.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/products/{id}/prices:
+    get:
+      summary: List prices for product
+      description: Returns a paginated list of prices associated with a specific product.
+      x-platform:
+        kind: resource
+        entity: Price
+        affectsLedger: false
+      operationId: listProductPrices
+      tags:
+        - Products
+        - Prices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated list of prices for the product.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/prices:
+    get:
+      summary: List prices
+      description: Returns a paginated list of prices with optional product, type, and active filters.
+      x-platform:
+        kind: resource
+        entity: Price
+        affectsLedger: false
+      operationId: listPrices
+      tags:
+        - Prices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: product_id
+          description: Filter prices by product ID.
+          schema:
+            type: string
+        - in: query
+          name: active
+          description: Filter by active status.
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+        - in: query
+          name: type
+          description: Filter by price type.
+          schema:
+            type: string
+            enum:
+              - one_time
+              - recurring
+      responses:
+        "200":
+          description: Paginated list of prices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create price
+      description: >
+        Creates a price for a product. Recurring prices require billing_interval. Cannot create prices for archived
+        products.
+      x-platform:
+        kind: resource
+        entity: Price
+        emitsEvents:
+          - price.created
+        affectsLedger: false
+        workflowRefs:
+          - subscription_lifecycle
+      operationId: createPrice
+      tags:
+        - Prices
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - currency
+                - unit_amount
+              properties:
+                product_id:
+                  type: string
+                  description: ID of the product this price belongs to.
+                nickname:
+                  type: string
+                  maxLength: 200
+                type:
+                  type: string
+                  enum:
+                    - one_time
+                    - recurring
+                  default: one_time
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                unit_amount:
+                  type: integer
+                  minimum: 1
+                  description: Price in smallest currency unit (e.g. cents).
+                billing_interval:
+                  type: string
+                  enum:
+                    - day
+                    - week
+                    - month
+                    - year
+                  description: Required for recurring prices.
+                interval_count:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                trial_days:
+                  type: integer
+                  minimum: 0
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              monthly:
+                value:
+                  product_id: prod_abc123
+                  nickname: Monthly
+                  type: recurring
+                  currency: usd
+                  unit_amount: 2999
+                  billing_interval: month
+                  interval_count: 1
+      responses:
+        "201":
+          description: Price created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - price
+                properties:
+                  price:
+                    type: object
+        "400":
+          description: Invalid request payload or product is archived.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/prices/{id}:
+    get:
+      summary: Get price by ID
+      description: Returns a single price scoped to the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Price
+        affectsLedger: false
+      operationId: getPriceById
+      tags:
+        - Prices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Price found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - price
+                properties:
+                  price:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Price not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update price
+      description: Updates a price's nickname, active status, or metadata.
+      x-platform:
+        kind: transition
+        entity: Price
+        emitsEvents:
+          - price.updated
+        affectsLedger: false
+        stateChanges:
+          - metadata_updated
+      operationId: updatePrice
+      tags:
+        - Prices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname:
+                  type: string
+                  maxLength: 200
+                  nullable: true
+                is_active:
+                  type: boolean
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Price updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - price
+                properties:
+                  price:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Price not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/coupons:
+    get:
+      summary: List coupons
+      description: Returns a paginated list of coupons for the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Coupon
+        affectsLedger: false
+      operationId: listCoupons
+      tags:
+        - Coupons
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated list of coupons.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create coupon
+      description: >
+        Creates a coupon with either a fixed amount or percentage discount. Exactly one of amount_off or percent_off
+        must be provided.
+      x-platform:
+        kind: resource
+        entity: Coupon
+        emitsEvents:
+          - coupon.created
+        affectsLedger: false
+      operationId: createCoupon
+      tags:
+        - Coupons
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                amount_off:
+                  type: integer
+                  minimum: 1
+                  description: Fixed discount in smallest currency unit. Mutually exclusive with percent_off.
+                percent_off:
+                  type: number
+                  minimum: 0.01
+                  maximum: 100
+                  description: Percentage discount. Mutually exclusive with amount_off.
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                  description: Required when amount_off is set.
+                duration:
+                  type: string
+                  enum:
+                    - once
+                    - repeating
+                    - forever
+                  default: once
+                duration_in_months:
+                  type: integer
+                  minimum: 1
+                  description: Required when duration is repeating.
+                max_redemptions:
+                  type: integer
+                  minimum: 1
+                redeem_by:
+                  type: string
+                  format: date-time
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              percent:
+                value:
+                  name: Summer Sale
+                  percent_off: 20
+                  duration: once
+      responses:
+        "201":
+          description: Coupon created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - coupon
+                properties:
+                  coupon:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/coupons/{id}:
+    get:
+      summary: Get coupon by ID
+      description: Returns a single coupon scoped to the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Coupon
+        affectsLedger: false
+      operationId: getCouponById
+      tags:
+        - Coupons
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Coupon found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - coupon
+                properties:
+                  coupon:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Coupon not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update coupon
+      description: Updates a coupon's name or metadata. Cannot update inactive coupons.
+      x-platform:
+        kind: transition
+        entity: Coupon
+        emitsEvents:
+          - coupon.updated
+        affectsLedger: false
+        stateChanges:
+          - active -> inactive
+          - metadata_updated
+      operationId: updateCoupon
+      tags:
+        - Coupons
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Coupon updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - coupon
+                properties:
+                  coupon:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Coupon not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Coupon is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Deactivate coupon
+      description: Deactivates a coupon (soft delete). Inactive coupons cannot be updated.
+      x-platform:
+        kind: transition
+        entity: Coupon
+        stateChanges:
+          - active -> inactive
+        emitsEvents:
+          - coupon.deactivated
+        affectsLedger: false
+      operationId: deactivateCoupon
+      tags:
+        - Coupons
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Coupon deactivated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - coupon
+                properties:
+                  coupon:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Coupon not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Coupon is already inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/promotion_codes:
+    get:
+      summary: List promotion codes
+      description: Returns a paginated list of promotion codes with optional coupon and active filters.
+      x-platform:
+        kind: resource
+        entity: PromotionCode
+        affectsLedger: false
+      operationId: listPromotionCodes
+      tags:
+        - PromoCodes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: coupon_id
+          description: Filter by coupon ID.
+          schema:
+            type: string
+        - in: query
+          name: active
+          description: Filter by active status.
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+      responses:
+        "200":
+          description: Paginated list of promotion codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create promotion code
+      description: Creates a promotion code linked to an active coupon. Code must be unique per merchant.
+      x-platform:
+        kind: resource
+        entity: PromotionCode
+        emitsEvents:
+          - promotion_code.created
+        affectsLedger: false
+      operationId: createPromotionCode
+      tags:
+        - PromoCodes
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - coupon_id
+                - code
+              properties:
+                coupon_id:
+                  type: string
+                  description: ID of the coupon this promotion code references.
+                code:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: Unique code string per merchant.
+                max_redemptions:
+                  type: integer
+                  minimum: 1
+                expires_at:
+                  type: string
+                  format: date-time
+                restrictions:
+                  type: object
+                  additionalProperties: true
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              basic:
+                value:
+                  coupon_id: cpn_abc123
+                  code: SUMMER2026
+                  max_redemptions: 100
+      responses:
+        "201":
+          description: Promotion code created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - promotion_code
+                properties:
+                  promotion_code:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Coupon not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Code already exists or coupon is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/promotion_codes/{id}:
+    get:
+      summary: Get promotion code by ID
+      description: Returns a single promotion code scoped to the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: PromotionCode
+        affectsLedger: false
+      operationId: getPromotionCodeById
+      tags:
+        - PromoCodes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Promotion code found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - promotion_code
+                properties:
+                  promotion_code:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Promotion code not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update promotion code
+      description: Updates a promotion code's active status or metadata.
+      x-platform:
+        kind: transition
+        entity: PromotionCode
+        emitsEvents:
+          - promotion_code.updated
+        affectsLedger: false
+        stateChanges:
+          - active -> inactive
+          - metadata_updated
+      operationId: updatePromotionCode
+      tags:
+        - PromoCodes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active:
+                  type: boolean
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Promotion code updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - promotion_code
+                properties:
+                  promotion_code:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Promotion code not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/tax_rates:
+    get:
+      summary: List tax rates
+      description: Returns a paginated list of tax rates with optional active and inclusive filters.
+      x-platform:
+        kind: resource
+        entity: TaxRate
+        affectsLedger: false
+      operationId: listTaxRates
+      tags:
+        - TaxRates
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: active
+          description: Filter by active status.
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+        - in: query
+          name: inclusive
+          description: Filter by inclusive tax.
+          schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+      responses:
+        "200":
+          description: Paginated list of tax rates.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create tax rate
+      description: Creates a new tax rate with display name and percentage.
+      x-platform:
+        kind: resource
+        entity: TaxRate
+        emitsEvents:
+          - tax_rate.created
+        affectsLedger: false
+      operationId: createTaxRate
+      tags:
+        - TaxRates
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - display_name
+                - percentage
+              properties:
+                display_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  maxLength: 2000
+                jurisdiction:
+                  type: string
+                  maxLength: 200
+                percentage:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                inclusive:
+                  type: boolean
+                  default: false
+                metadata:
+                  type: object
+                  additionalProperties: true
+            examples:
+              basic:
+                value:
+                  display_name: CA State Tax
+                  jurisdiction: California
+                  percentage: 7.25
+                  inclusive: false
+      responses:
+        "201":
+          description: Tax rate created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tax_rate
+                properties:
+                  tax_rate:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/tax_rates/{id}:
+    get:
+      summary: Get tax rate by ID
+      description: Returns a single tax rate scoped to the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: TaxRate
+        affectsLedger: false
+      operationId: getTaxRateById
+      tags:
+        - TaxRates
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Tax rate found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tax_rate
+                properties:
+                  tax_rate:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tax rate not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update tax rate
+      description: Updates a tax rate's display name, description, jurisdiction, or metadata. Cannot update inactive tax rates.
+      x-platform:
+        kind: transition
+        entity: TaxRate
+        emitsEvents:
+          - tax_rate.updated
+        affectsLedger: false
+        stateChanges:
+          - active -> inactive
+          - metadata_updated
+      operationId: updateTaxRate
+      tags:
+        - TaxRates
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                description:
+                  type: string
+                  maxLength: 2000
+                  nullable: true
+                jurisdiction:
+                  type: string
+                  maxLength: 200
+                  nullable: true
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Tax rate updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tax_rate
+                properties:
+                  tax_rate:
+                    type: object
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tax rate not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Tax rate is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Deactivate tax rate
+      description: Deactivates a tax rate (soft delete). Inactive tax rates cannot be updated.
+      x-platform:
+        kind: transition
+        entity: TaxRate
+        stateChanges:
+          - active -> inactive
+        emitsEvents:
+          - tax_rate.deactivated
+        affectsLedger: false
+      operationId: deactivateTaxRate
+      tags:
+        - TaxRates
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Tax rate deactivated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tax_rate
+                properties:
+                  tax_rate:
+                    type: object
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tax rate not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Tax rate is already inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/credit_notes:
+    get:
+      summary: List credit notes
+      description: Returns a paginated list of credit notes for the authenticated merchant. Optionally filter by invoice_id.
+      x-platform:
+        kind: resource
+        entity: CreditNote
+        affectsLedger: false
+      operationId: listCreditNotes
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: invoice_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated list of credit notes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CreditNote"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create credit note
+      description: Creates a credit note against an existing invoice.
+      x-platform:
+        kind: resource
+        entity: CreditNote
+        emitsEvents:
+          - credit_note.created
+        affectsLedger: false
+      operationId: createCreditNote
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - invoice_id
+                - amount
+                - currency
+              properties:
+                invoice_id:
+                  type: string
+                amount:
+                  type: integer
+                  minimum: 1
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                reason:
+                  type: string
+                  maxLength: 500
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: Credit note created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - credit_note
+                properties:
+                  credit_note:
+                    $ref: "#/components/schemas/CreditNote"
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/credit_notes/{id}:
+    get:
+      summary: Get credit note by ID
+      description: Returns a single credit note.
+      x-platform:
+        kind: resource
+        entity: CreditNote
+        affectsLedger: false
+      operationId: getCreditNoteById
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Credit note found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - credit_note
+                properties:
+                  credit_note:
+                    $ref: "#/components/schemas/CreditNote"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update credit note
+      description: Updates reason or metadata on an issued credit note. Cannot update voided credit notes.
+      x-platform:
+        kind: transition
+        entity: CreditNote
+        emitsEvents:
+          - credit_note.updated
+        affectsLedger: false
+        stateChanges:
+          - metadata_updated
+      operationId: updateCreditNote
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Credit note updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - credit_note
+                properties:
+                  credit_note:
+                    $ref: "#/components/schemas/CreditNote"
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credit note is voided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/credit_notes/{id}/void:
+    post:
+      summary: Void credit note
+      description: Voids an issued credit note. Already voided notes return a 409 error.
+      x-platform:
+        kind: transition
+        entity: CreditNote
+        stateChanges:
+          - issued -> void
+        emitsEvents:
+          - credit_note.voided
+        affectsLedger: false
+      operationId: voidCreditNote
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Credit note voided.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - credit_note
+                properties:
+                  credit_note:
+                    $ref: "#/components/schemas/CreditNote"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credit note is already voided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/credit_notes/{id}/lines:
+    get:
+      summary: List credit note line items
+      description: Returns paginated line items for a given credit note.
+      x-platform:
+        kind: resource
+        entity: CreditNoteLineItem
+        affectsLedger: false
+      operationId: listCreditNoteLines
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated list of line items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CreditNoteLineItem"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Add line item to credit note
+      description: Adds a line item to an issued credit note. Cannot add to voided credit notes.
+      x-platform:
+        kind: resource
+        entity: CreditNoteLineItem
+        emitsEvents:
+          - credit_note.line_item.created
+        affectsLedger: false
+      operationId: addCreditNoteLine
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - unit_amount
+              properties:
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                quantity:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                unit_amount:
+                  type: integer
+                  minimum: 1
+      responses:
+        "201":
+          description: Line item added.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - line_item
+                properties:
+                  line_item:
+                    $ref: "#/components/schemas/CreditNoteLineItem"
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credit note is voided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/credit_notes/{id}/lines/{lineId}:
+    get:
+      summary: Get credit note line item
+      description: Returns a single line item by ID.
+      x-platform:
+        kind: resource
+        entity: CreditNoteLineItem
+        affectsLedger: false
+      operationId: getCreditNoteLineById
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - name: lineId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Line item found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - line_item
+                properties:
+                  line_item:
+                    $ref: "#/components/schemas/CreditNoteLineItem"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update credit note line item
+      description: Updates a line item on an issued credit note.
+      x-platform:
+        kind: transition
+        entity: CreditNoteLineItem
+        emitsEvents:
+          - credit_note.line_item.updated
+        affectsLedger: false
+        stateChanges:
+          - line_updated
+      operationId: updateCreditNoteLine
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - name: lineId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                quantity:
+                  type: integer
+                  minimum: 1
+                unit_amount:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Line item updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - line_item
+                properties:
+                  line_item:
+                    $ref: "#/components/schemas/CreditNoteLineItem"
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credit note is voided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Delete credit note line item
+      description: Deletes a line item from an issued credit note. Cannot delete from voided credit notes.
+      x-platform:
+        kind: transition
+        entity: CreditNoteLineItem
+        emitsEvents:
+          - credit_note.line_item.deleted
+        affectsLedger: false
+        stateChanges:
+          - line_removed
+      operationId: deleteCreditNoteLine
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - name: lineId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Line item deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - deleted
+                  - id
+                properties:
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Credit note or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Credit note is voided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/adjustments:
+    get:
+      summary: List adjustments
+      description: Returns a paginated list of adjustments. Optionally filter by type.
+      x-platform:
+        kind: resource
+        entity: Adjustment
+        affectsLedger: false
+      operationId: listAdjustments
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum:
+              - credit
+              - debit
+      responses:
+        "200":
+          description: Paginated list of adjustments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Adjustment"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create adjustment
+      description: Creates a credit or debit adjustment for the authenticated merchant.
+      x-platform:
+        kind: resource
+        entity: Adjustment
+        emitsEvents:
+          - adjustment.created
+        affectsLedger: false
+      operationId: createAdjustment
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - amount
+                - currency
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - credit
+                    - debit
+                amount:
+                  type: integer
+                  minimum: 1
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                description:
+                  type: string
+                  maxLength: 500
+                reference:
+                  type: string
+                  maxLength: 200
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: Adjustment created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - adjustment
+                properties:
+                  adjustment:
+                    $ref: "#/components/schemas/Adjustment"
+        "400":
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/adjustments/{id}:
+    get:
+      summary: Get adjustment by ID
+      description: Returns a single adjustment.
+      x-platform:
+        kind: resource
+        entity: Adjustment
+        affectsLedger: false
+      operationId: getAdjustmentById
+      tags:
+        - CreditNotes
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Adjustment found.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - adjustment
+                properties:
+                  adjustment:
+                    $ref: "#/components/schemas/Adjustment"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Adjustment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions:
+    get:
+      summary: List subscriptions
+      description: Returns a paginated list of subscriptions with optional customer_id and status filters.
+      x-platform:
+        kind: resource
+        entity: Subscription
+        affectsLedger: false
+      operationId: listSubscriptions
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: customer_id
+          schema:
+            type: string
+          description: Filter by customer ID.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - incomplete
+              - incomplete_expired
+              - trialing
+              - active
+              - past_due
+              - paused
+              - canceled
+              - unpaid
+          description: Filter by subscription status.
+      responses:
+        "200":
+          description: Paginated list of subscriptions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subscription"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create subscription
+      description: Creates a new subscription for a customer with one or more recurring price items.
+      x-platform:
+        kind: resource
+        entity: Subscription
+        stateChanges:
+          - -> active
+          - -> trialing
+        emitsEvents:
+          - subscription.created
+        affectsLedger: false
+      operationId: createSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customer_id
+                - items
+              properties:
+                customer_id:
+                  type: string
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - price_id
+                    properties:
+                      price_id:
+                        type: string
+                      quantity:
+                        type: integer
+                        minimum: 1
+                        default: 1
+                default_payment_method:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "201":
+          description: Subscription created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Customer or price not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}:
+    get:
+      summary: Get subscription
+      description: Retrieves a single subscription by ID.
+      x-platform:
+        kind: resource
+        entity: Subscription
+        affectsLedger: false
+      operationId: getSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Subscription details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update subscription
+      description: Updates subscription metadata, default payment method, or cancel-at-period-end flag.
+      x-platform:
+        kind: resource
+        entity: Subscription
+        emitsEvents:
+          - subscription.updated
+        affectsLedger: false
+      operationId: updateSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                default_payment_method:
+                  type: string
+                cancel_at_period_end:
+                  type: boolean
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Subscription updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}/cancel:
+    post:
+      summary: Cancel subscription
+      description: Immediately cancels a subscription and sets its ended_at timestamp.
+      x-platform:
+        kind: transition
+        entity: Subscription
+        stateChanges:
+          - "* -> canceled"
+        emitsEvents:
+          - subscription.canceled
+        affectsLedger: false
+      operationId: cancelSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Subscription canceled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}/pause:
+    post:
+      summary: Pause subscription
+      description: Pauses an active subscription. Only active subscriptions can be paused.
+      x-platform:
+        kind: transition
+        entity: Subscription
+        stateChanges:
+          - active -> paused
+        emitsEvents:
+          - subscription.paused
+        affectsLedger: false
+      operationId: pauseSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Subscription paused.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}/resume:
+    post:
+      summary: Resume subscription
+      description: Resumes a paused or past-due subscription back to active.
+      x-platform:
+        kind: transition
+        entity: Subscription
+        stateChanges:
+          - paused -> active
+          - unpaid -> active
+          - past_due -> active
+        emitsEvents:
+          - subscription.resumed
+        affectsLedger: false
+      operationId: resumeSubscription
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Subscription resumed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription
+                properties:
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}/items:
+    get:
+      summary: List subscription items
+      description: Returns paginated items for a subscription.
+      x-platform:
+        kind: resource
+        entity: SubscriptionItem
+        affectsLedger: false
+      operationId: listSubscriptionItems
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated subscription items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SubscriptionItem"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Add subscription item
+      description: Adds a new price line item to an existing subscription.
+      x-platform:
+        kind: resource
+        entity: SubscriptionItem
+        emitsEvents:
+          - subscription.updated
+        affectsLedger: false
+      operationId: addSubscriptionItem
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - price_id
+              properties:
+                price_id:
+                  type: string
+                quantity:
+                  type: integer
+                  minimum: 1
+                  default: 1
+      responses:
+        "201":
+          description: Item added.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription_item
+                properties:
+                  subscription_item:
+                    $ref: "#/components/schemas/SubscriptionItem"
+        "400":
+          description: Validation error or subscription terminated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Subscription or price not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/subscriptions/{id}/items/{itemId}:
+    get:
+      summary: Get subscription item
+      description: Retrieves a single subscription item.
+      x-platform:
+        kind: resource
+        entity: SubscriptionItem
+        affectsLedger: false
+      operationId: getSubscriptionItem
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Subscription item ID.
+      responses:
+        "200":
+          description: Subscription item details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription_item
+                properties:
+                  subscription_item:
+                    $ref: "#/components/schemas/SubscriptionItem"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update subscription item quantity
+      description: Updates the quantity of a subscription item.
+      x-platform:
+        kind: resource
+        entity: SubscriptionItem
+        emitsEvents:
+          - subscription.updated
+        affectsLedger: false
+      operationId: updateSubscriptionItem
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Subscription item ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - quantity
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        "200":
+          description: Item updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - subscription_item
+                properties:
+                  subscription_item:
+                    $ref: "#/components/schemas/SubscriptionItem"
+        "400":
+          description: Subscription terminated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Remove subscription item
+      description: Removes a subscription item. Cannot remove the last item.
+      x-platform:
+        kind: transition
+        entity: SubscriptionItem
+        emitsEvents:
+          - subscription.updated
+        affectsLedger: false
+        stateChanges:
+          - item_removed
+      operationId: deleteSubscriptionItem
+      tags:
+        - Subscriptions
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Subscription item ID.
+      responses:
+        "200":
+          description: Item removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - deleted
+                properties:
+                  deleted:
+                    type: boolean
+        "400":
+          description: Cannot remove last item or subscription terminated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/customers/{id}/subscriptions:
+    get:
+      summary: List customer subscriptions
+      description: Returns paginated subscriptions for a specific customer.
+      x-platform:
+        kind: resource
+        entity: Subscription
+        affectsLedger: false
+      operationId: listCustomerSubscriptions
+      tags:
+        - Subscriptions
+        - Customers
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - incomplete
+              - incomplete_expired
+              - trialing
+              - active
+              - past_due
+              - paused
+              - canceled
+              - unpaid
+          description: Filter by subscription status.
+      responses:
+        "200":
+          description: Paginated list of customer subscriptions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subscription"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Customer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices:
+    get:
+      summary: List invoices
+      description: Returns a paginated list of invoices with optional filters.
+      x-platform:
+        kind: resource
+        entity: Invoice
+        affectsLedger: false
+      operationId: listInvoices
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: customer_id
+          schema:
+            type: string
+          description: Filter by customer ID.
+        - in: query
+          name: subscription_id
+          schema:
+            type: string
+          description: Filter by subscription ID.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - draft
+              - open
+              - paid
+              - void
+              - uncollectible
+              - past_due
+          description: Filter by invoice status.
+      responses:
+        "200":
+          description: Paginated list of invoices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Invoice"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Create draft invoice
+      description: Creates a new draft invoice for a customer. Items can be added afterward.
+      x-platform:
+        kind: resource
+        entity: Invoice
+        stateChanges:
+          - -> draft
+        emitsEvents:
+          - invoice.created
+        affectsLedger: false
+      operationId: createInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customer_id
+                - currency
+              properties:
+                customer_id:
+                  type: string
+                subscription_id:
+                  type: string
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                due_date:
+                  type: string
+                  format: date-time
+                metadata:
+                  type: object
+      responses:
+        "201":
+          description: Invoice created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Customer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}:
+    get:
+      summary: Get invoice
+      description: Retrieves a single invoice by ID with line items.
+      x-platform:
+        kind: resource
+        entity: Invoice
+        affectsLedger: false
+      operationId: getInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Invoice details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update draft invoice
+      description: Updates metadata or due date on a draft invoice.
+      x-platform:
+        kind: resource
+        entity: Invoice
+        emitsEvents:
+          - invoice.updated
+        affectsLedger: false
+      operationId: updateInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                due_date:
+                  type: string
+                  format: date-time
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Invoice updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "400":
+          description: Invoice is not in draft status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/finalize:
+    post:
+      summary: Finalize invoice
+      description: Transitions a draft invoice to open status, recalculating totals from line items.
+      x-platform:
+        kind: transition
+        entity: Invoice
+        stateChanges:
+          - draft -> open
+        emitsEvents:
+          - invoice.finalized
+        affectsLedger: false
+      operationId: finalizeInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Invoice finalized.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/pay:
+    post:
+      summary: Pay invoice
+      description: >
+        Attempts to pay an open or past-due invoice using the deterministic mock processor. Amount divisible by 10 →
+        paid; divisible by 5 (not 10) → uncollectible; else stays current status.
+      x-platform:
+        kind: transition
+        entity: Invoice
+        stateChanges:
+          - open -> paid
+          - open -> uncollectible
+          - past_due -> paid
+          - past_due -> uncollectible
+        emitsEvents:
+          - invoice.paid
+          - invoice.uncollectible
+          - invoice.payment_failed
+        affectsLedger: false
+      operationId: payInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Payment attempt processed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/void:
+    post:
+      summary: Void invoice
+      description: Voids a draft, open, or past-due invoice.
+      x-platform:
+        kind: transition
+        entity: Invoice
+        stateChanges:
+          - draft -> void
+          - open -> void
+          - past_due -> void
+        emitsEvents:
+          - invoice.voided
+        affectsLedger: false
+      operationId: voidInvoice
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      responses:
+        "200":
+          description: Invoice voided.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice
+                properties:
+                  invoice:
+                    $ref: "#/components/schemas/Invoice"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/items:
+    get:
+      summary: List invoice items
+      description: Returns paginated items for an invoice.
+      x-platform:
+        kind: resource
+        entity: InvoiceItem
+        affectsLedger: false
+      operationId: listInvoiceItems
+      tags:
+        - InvoiceItems
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated invoice items.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InvoiceItem"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Add invoice item
+      description: Adds a line item to a draft invoice and recalculates totals.
+      x-platform:
+        kind: resource
+        entity: InvoiceItem
+        emitsEvents:
+          - invoice.updated
+        affectsLedger: false
+      operationId: addInvoiceItem
+      tags:
+        - InvoiceItems
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - unit_amount
+                - currency
+              properties:
+                description:
+                  type: string
+                quantity:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                unit_amount:
+                  type: integer
+                  minimum: 0
+                currency:
+                  type: string
+                  minLength: 3
+                  maxLength: 3
+                price_id:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "201":
+          description: Item added.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice_item
+                properties:
+                  invoice_item:
+                    $ref: "#/components/schemas/InvoiceItem"
+        "400":
+          description: Invoice is not in draft status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/items/{itemId}:
+    get:
+      summary: Get invoice item
+      description: Retrieves a single invoice item.
+      x-platform:
+        kind: resource
+        entity: InvoiceItem
+        affectsLedger: false
+      operationId: getInvoiceItem
+      tags:
+        - InvoiceItems
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Invoice item ID.
+      responses:
+        "200":
+          description: Invoice item details.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice_item
+                properties:
+                  invoice_item:
+                    $ref: "#/components/schemas/InvoiceItem"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: Update invoice item
+      description: Updates an invoice item on a draft invoice and recalculates totals.
+      x-platform:
+        kind: resource
+        entity: InvoiceItem
+        emitsEvents:
+          - invoice.updated
+        affectsLedger: false
+      operationId: updateInvoiceItem
+      tags:
+        - InvoiceItems
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Invoice item ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                quantity:
+                  type: integer
+                  minimum: 1
+                unit_amount:
+                  type: integer
+                  minimum: 0
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Item updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoice_item
+                properties:
+                  invoice_item:
+                    $ref: "#/components/schemas/InvoiceItem"
+        "400":
+          description: Invoice is not in draft status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Delete invoice item
+      description: Removes an invoice item from a draft invoice and recalculates totals.
+      x-platform:
+        kind: transition
+        entity: InvoiceItem
+        emitsEvents:
+          - invoice.updated
+        affectsLedger: false
+        stateChanges:
+          - item_removed
+      operationId: deleteInvoiceItem
+      tags:
+        - InvoiceItems
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: string
+          description: Invoice item ID.
+      responses:
+        "200":
+          description: Item removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - deleted
+                properties:
+                  deleted:
+                    type: boolean
+        "400":
+          description: Invoice is not in draft status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/invoices/{id}/attempts:
+    get:
+      summary: List invoice payment attempts
+      description: Returns paginated payment attempts for an invoice.
+      x-platform:
+        kind: resource
+        entity: InvoiceAttempt
+        affectsLedger: false
+      operationId: listInvoiceAttempts
+      tags:
+        - Invoices
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated invoice attempts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InvoiceAttempt"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/customers/{id}/invoices:
+    get:
+      summary: List customer invoices
+      description: Returns paginated invoices for a specific customer.
+      x-platform:
+        kind: resource
+        entity: Invoice
+        affectsLedger: false
+      operationId: listCustomerInvoices
+      tags:
+        - Invoices
+        - Customers
+      security:
+        - MerchantKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PathId"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - draft
+              - open
+              - paid
+              - void
+              - uncollectible
+              - past_due
+          description: Filter by invoice status.
+      responses:
+        "200":
+          description: Paginated list of customer invoices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - pagination
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Invoice"
+                  pagination:
+                    $ref: "#/components/schemas/PaginationMeta"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Customer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  securitySchemes:
+    MerchantKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: |
+        Bearer API key for merchant-scoped operations. Pass as `Authorization: Bearer {{merchantApiKey}}`.
+    PlatformAdminKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: |
+        Bearer API key for platform admin operations. Pass as `Authorization: Bearer {{platformAdminKey}}`.
+  schemas:
+    ErrorResponse:
+      description: Standard error response envelope returned for 4xx/5xx responses.
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+            message:
+              type: string
+              description: Human-readable error description.
+    PaginationMeta:
+      description: Pagination metadata included in list responses.
+      type: object
+      required:
+        - page
+        - pageSize
+        - total
+        - hasMore
+      properties:
+        page:
+          type: integer
+          description: Current page number (1-indexed).
+        pageSize:
+          type: integer
+          description: Number of results per page.
+        total:
+          type: integer
+          description: Total number of matching records.
+        hasMore:
+          type: boolean
+          description: Whether additional pages exist.
+    CreditNote:
+      description: A credit note issued against an invoice.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        invoice_id:
+          type: string
+        number:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - issued
+            - void
+        reason:
+          type: string
+          nullable: true
+        amount:
+          type: integer
+        currency:
+          type: string
+        voided_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreditNoteLineItem:
+      description: A line item on a credit note.
+      type: object
+      properties:
+        id:
+          type: string
+        credit_note_id:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_amount:
+          type: integer
+        amount:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    Event:
+      description: A domain event representing a state change in the system.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        type:
+          type: string
+          description: Event type (e.g. payment_intent.succeeded).
+        entity_type:
+          type: string
+          description: Type of entity that triggered the event.
+        entity_id:
+          type: string
+          description: ID of the entity that triggered the event.
+        payload:
+          type: object
+          description: Event payload with entity snapshot.
+        actor_type:
+          type: string
+          nullable: true
+        actor_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    WebhookEndpoint:
+      description: A registered webhook endpoint for receiving event notifications.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        url:
+          type: string
+          format: uri
+        is_active:
+          type: boolean
+        enabled_events:
+          type: array
+          items:
+            type: string
+        secret:
+          type: string
+          description: Only included on creation and rotate.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WebhookDelivery:
+      description: A webhook delivery record with attempt history.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        webhook_endpoint_id:
+          type: string
+        event_type:
+          type: string
+        payload:
+          type: object
+        status:
+          type: string
+          enum:
+            - PENDING
+            - DELIVERED
+            - FAILED
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+        next_attempt_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        attempts:
+          type: array
+          items:
+            type: object
+            properties:
+              attempt_number:
+                type: integer
+              response_status:
+                type: integer
+                nullable: true
+              created_at:
+                type: string
+                format: date-time
+              completed_at:
+                type: string
+                format: date-time
+                nullable: true
+    Adjustment:
+      description: A credit or debit adjustment.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - credit
+            - debit
+        amount:
+          type: integer
+        currency:
+          type: string
+        description:
+          type: string
+          nullable: true
+        reference:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Dispute:
+      description: A payment dispute.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        payment_intent_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - needs_response
+            - under_review
+            - won
+            - lost
+            - accepted
+            - expired
+        reason:
+          type: string
+          enum:
+            - fraudulent
+            - duplicate
+            - not_received
+            - product_unacceptable
+            - subscription_canceled
+            - other
+        amount:
+          type: integer
+        currency:
+          type: string
+        due_by:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DisputeEvidence:
+      description: A piece of evidence for a dispute.
+      type: object
+      properties:
+        id:
+          type: string
+        dispute_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - receipt
+            - shipping_proof
+            - customer_communication
+            - service_documentation
+            - policy_disclosure
+            - other
+        file_name:
+          type: string
+          nullable: true
+        file_size:
+          type: integer
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Representment:
+      description: A dispute representment.
+      type: object
+      properties:
+        id:
+          type: string
+        dispute_id:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        outcome:
+          type: string
+          nullable: true
+        details:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OnboardingProfile:
+      description: Merchant onboarding / KYB profile.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        business_name:
+          type: string
+          nullable: true
+        business_type:
+          type: string
+          nullable: true
+        tax_id:
+          type: string
+          nullable: true
+        website:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - started
+            - submitted
+            - under_review
+            - approved
+            - denied
+            - withdrawn
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Owner:
+      description: Beneficial owner attached to an onboarding profile.
+      type: object
+      properties:
+        id:
+          type: string
+        onboarding_profile_id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          nullable: true
+        ownership_percentage:
+          type: integer
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OnboardingDocument:
+      description: Document record for KYB verification.
+      type: object
+      properties:
+        id:
+          type: string
+        onboarding_profile_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - government_id
+            - proof_of_address
+            - bank_statement
+            - tax_return
+            - articles_of_incorporation
+            - other
+        status:
+          type: string
+          enum:
+            - pending
+            - verified
+            - rejected
+        file_name:
+          type: string
+        file_size:
+          type: integer
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+        review_note:
+          type: string
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OnboardingBankAccount:
+      description: Bank account attached to an onboarding profile.
+      type: object
+      properties:
+        id:
+          type: string
+        onboarding_profile_id:
+          type: string
+        bank_name:
+          type: string
+        account_holder_name:
+          type: string
+        routing_number:
+          type: string
+        account_number_last4:
+          type: string
+        account_type:
+          type: string
+          enum:
+            - checking
+            - savings
+        is_verified:
+          type: boolean
+        is_primary:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UnderwritingCase:
+      description: Underwriting review case linked to an onboarding profile.
+      type: object
+      properties:
+        id:
+          type: string
+        onboarding_profile_id:
+          type: string
+        assigned_to:
+          type: string
+          nullable: true
+        risk_score:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UnderwritingDecision:
+      description: Decision recorded against an underwriting case.
+      type: object
+      properties:
+        id:
+          type: string
+        underwriting_case_id:
+          type: string
+        result:
+          type: string
+          enum:
+            - approved
+            - denied
+            - escalated
+            - pending_info
+        reason:
+          type: string
+          nullable: true
+        decided_by:
+          type: string
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Subscription:
+      description: A recurring billing subscription.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        customer_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - incomplete
+            - incomplete_expired
+            - trialing
+            - active
+            - past_due
+            - paused
+            - canceled
+            - unpaid
+        current_period_start:
+          type: string
+          format: date-time
+        current_period_end:
+          type: string
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        canceled_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        trial_start:
+          type: string
+          format: date-time
+          nullable: true
+        trial_end:
+          type: string
+          format: date-time
+          nullable: true
+        default_payment_method:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionItem"
+    SubscriptionItem:
+      description: A line item on a subscription linking a price.
+      type: object
+      properties:
+        id:
+          type: string
+        subscription_id:
+          type: string
+        price_id:
+          type: string
+        quantity:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Invoice:
+      description: An invoice representing an amount owed by a customer.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        customer_id:
+          type: string
+        subscription_id:
+          type: string
+          nullable: true
+        number:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - draft
+            - open
+            - paid
+            - void
+            - uncollectible
+            - past_due
+        currency:
+          type: string
+        subtotal:
+          type: integer
+        tax:
+          type: integer
+        total:
+          type: integer
+        amount_paid:
+          type: integer
+        amount_due:
+          type: integer
+        due_date:
+          type: string
+          format: date-time
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        voided_at:
+          type: string
+          format: date-time
+          nullable: true
+        period_start:
+          type: string
+          format: date-time
+          nullable: true
+        period_end:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceItem"
+    InvoiceItem:
+      description: A line item on an invoice.
+      type: object
+      properties:
+        id:
+          type: string
+        invoice_id:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_amount:
+          type: integer
+        amount:
+          type: integer
+        currency:
+          type: string
+        price_id:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    InvoiceAttempt:
+      description: A payment attempt against an invoice.
+      type: object
+      properties:
+        id:
+          type: string
+        invoice_id:
+          type: string
+        attempt_number:
+          type: integer
+        amount:
+          type: integer
+        status:
+          type: string
+          enum:
+            - succeeded
+            - failed
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    Report:
+      description: An on-demand report generated for a merchant.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        type:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - processing
+            - completed
+            - failed
+        parameters:
+          type: object
+          nullable: true
+        result_url:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Export:
+      description: A data export requested by a merchant.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        type:
+          type: string
+        format:
+          type: string
+          enum:
+            - csv
+            - json
+            - pdf
+        status:
+          type: string
+          enum:
+            - queued
+            - processing
+            - completed
+            - failed
+        parameters:
+          type: object
+          nullable: true
+        result_url:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        row_count:
+          type: integer
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ExportSchedule:
+      description: A recurring export schedule configured by a merchant.
+      type: object
+      properties:
+        id:
+          type: string
+        merchant_id:
+          type: string
+        type:
+          type: string
+        format:
+          type: string
+          enum:
+            - csv
+            - json
+            - pdf
+        frequency:
+          type: string
+          enum:
+            - daily
+            - weekly
+            - monthly
+        parameters:
+          type: object
+          nullable: true
+        is_active:
+          type: boolean
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        next_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Job:
+      description: A platform background job.
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+            - canceled
+        payload:
+          type: object
+          nullable: true
+        result:
+          type: object
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        scheduled_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DeadLetter:
+      description: A dead letter entry for failed processing.
+      type: object
+      properties:
+        id:
+          type: string
+        source_type:
+          type: string
+        source_id:
+          type: string
+          nullable: true
+        payload:
+          type: object
+        error_message:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - reprocessed
+            - discarded
+        reprocessed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      description: |
+        Client-generated unique key for safe request retries. Identical key + payload replays the original response.
+      schema:
+        type: string
+        example: idem-key-a1b2c3d4
+    PageParam:
+      in: query
+      name: page
+      description: Page number (1-indexed).
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      in: query
+      name: pageSize
+      description: Number of results per page (max 100).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+    PathId:
+      in: path
+      name: id
+      required: true
+      description: Resource identifier.
+      schema:
+        type: string
+  headers:
+    X-Signature:
+      description: HMAC SHA-256 signature computed over `timestamp.payload`.
+      schema:
+        type: string
+    X-Timestamp:
+      description: Unix timestamp (seconds) at webhook delivery time.
+      schema:
+        type: string
+    X-Event-Type:
+      description: Webhook event type string (e.g. `payment_intent.succeeded`).
+      schema:
+        type: string
+    X-RateLimit-Limit:
+      description: Maximum requests allowed in the current fixed window.
+      schema:
+        type: string
+    X-RateLimit-Remaining:
+      description: Requests remaining in the current fixed window.
+      schema:
+        type: string
+    X-RateLimit-Reset:
+      description: Unix timestamp when the current rate-limit window resets.
+      schema:
+        type: string

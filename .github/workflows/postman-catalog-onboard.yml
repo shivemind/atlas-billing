@@ -23,9 +23,18 @@ jobs:
       - name: Login to Postman
         run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
 
+      - name: Resolve Collection UID
+        id: resolve
+        run: |
+          COLL_UID=$(curl -sf "https://api.getpostman.com/collections?workspace=9741a9ce-4df3-4236-bf21-bb14795f2e74" \
+            -H "x-api-key: ${{ secrets.POSTMAN_API_KEY }}" \
+            | jq -r '.collections[] | select(.name | contains("Billing API")) | .uid' | head -1)
+          echo "collection_uid=$COLL_UID" >> $GITHUB_OUTPUT
+          echo "Resolved collection: $COLL_UID"
+
       - name: Run Collection
         run: |
-          postman collection run 52400725-04ebc6a6-e3e5-45cc-99f5-5b52f2ab0593 \
+          postman collection run ${{ steps.resolve.outputs.collection_uid }} \
             -e 52400725-55db4f35-9ac7-4f83-b06b-edccde48fc27 \
             --postman-api-key ${{ secrets.POSTMAN_API_KEY }}
 
@@ -34,18 +43,16 @@ jobs:
         run: |
           MONITOR_UID=$(curl -sf "https://api.getpostman.com/monitors" \
             -H "x-api-key: ${{ secrets.POSTMAN_API_KEY }}" \
-            | jq -r '.monitors[] | select(.name == "Atlas Billing API - Health Monitor") | .uid' | head -1)
+            | jq -r '.monitors[] | select(.name | contains("Billing API - Health")) | .uid' | head -1)
           if [ -n "$MONITOR_UID" ]; then
             echo "Triggering monitor $MONITOR_UID"
             curl -sf -X POST "https://api.getpostman.com/monitors/$MONITOR_UID/run" \
               -H "x-api-key: ${{ secrets.POSTMAN_API_KEY }}" || true
-          else
-            echo "Monitor not found, skipping"
           fi
 
       - name: Summary
         if: always()
         run: |
           echo "### Postman Catalog Onboard - Atlas Billing" >> $GITHUB_STEP_SUMMARY
-          echo "- **Collection**: 52400725-04ebc6a6-e3e5-45cc-99f5-5b52f2ab0593" >> $GITHUB_STEP_SUMMARY
+          echo "- **Collection**: ${{ steps.resolve.outputs.collection_uid }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Workspace**: [9741a9ce-4df3-4236-bf21-bb14795f2e74](https://go.postman.co/workspace/9741a9ce-4df3-4236-bf21-bb14795f2e74)" >> $GITHUB_STEP_SUMMARY

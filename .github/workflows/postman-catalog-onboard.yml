@@ -1,0 +1,46 @@
+name: Postman Catalog Onboard
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  collection-run:
+    name: Run API Collection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Postman CLI
+        run: curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
+
+      - name: Login to Postman
+        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
+
+      - name: Run Collection
+        run: |
+          postman collection run 52400725-4a182a2c-70dc-4a2f-8af7-c6f4e22ba38c \
+            -e 52400725-55db4f35-9ac7-4f83-b06b-edccde48fc27 \
+            --postman-api-key ${{ secrets.POSTMAN_API_KEY }} \
+            || true
+
+      - name: Trigger Monitor Run
+        run: |
+          curl -s -X POST "https://api.getpostman.com/monitors/1f11e3f5-1f8d-4170-a280-886c79c25cc5/run" \
+            -H "x-api-key: ${{ secrets.POSTMAN_API_KEY }}" \
+            || true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Postman Catalog Onboard" >> $GITHUB_STEP_SUMMARY
+          echo "- **Collection**: 52400725-4a182a2c-70dc-4a2f-8af7-c6f4e22ba38c" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: 52400725-55db4f35-9ac7-4f83-b06b-edccde48fc27" >> $GITHUB_STEP_SUMMARY
+          echo "- **Workspace**: [9741a9ce-4df3-4236-bf21-bb14795f2e74](https://go.postman.co/workspace/9741a9ce-4df3-4236-bf21-bb14795f2e74)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Monitor**: 1f11e3f5-1f8d-4170-a280-886c79c25cc5" >> $GITHUB_STEP_SUMMARY

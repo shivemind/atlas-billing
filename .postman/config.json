@@ -1,0 +1,21 @@
+{
+  "workspace": {
+    "id": "9741a9ce-4df3-4236-bf21-bb14795f2e74"
+  },
+  "entities": {
+    "collections": [
+      "../postman/collections/atlas-production/atlas-billing.postman_collection.json",
+      "../postman/collections/atlas-production/atlas-billing.postman_collection.json",
+      "../postman/collections/atlas-production/atlas-billing.postman_collection.json",
+      "../postman/collections/atlas-production/atlas-billing.postman_collection.json",
+      "../postman/collections/Atlas Billing API.postman_collection.json"
+    ],
+    "environments": [
+      "../postman/environments/Atlas Billing API - Production.postman_environment.json",
+      "../postman/environments/Atlas Billing API - Dev.postman_environment.json"
+    ],
+    "specs": [],
+    "flows": [],
+    "globals": []
+  }
+}

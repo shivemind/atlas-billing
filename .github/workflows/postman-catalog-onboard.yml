@@ -25,7 +25,7 @@ jobs:
 
       - name: Run Collection
         run: |
-          postman collection run 52400725-fb3146c1-0198-413c-a140-6ca86658a193 \
+          postman collection run 52400725-04ebc6a6-e3e5-45cc-99f5-5b52f2ab0593 \
             -e 52400725-55db4f35-9ac7-4f83-b06b-edccde48fc27 \
             --postman-api-key ${{ secrets.POSTMAN_API_KEY }}
 
@@ -38,5 +38,5 @@ jobs:
         if: always()
         run: |
           echo "### Postman Catalog Onboard - Atlas Billing" >> $GITHUB_STEP_SUMMARY
-          echo "- **Collection**: 52400725-fb3146c1-0198-413c-a140-6ca86658a193" >> $GITHUB_STEP_SUMMARY
+          echo "- **Collection**: 52400725-04ebc6a6-e3e5-45cc-99f5-5b52f2ab0593" >> $GITHUB_STEP_SUMMARY
           echo "- **Monitor**: 52400725-1f11e43e-0c05-4820-af5e-9ab17849cc01" >> $GITHUB_STEP_SUMMARY

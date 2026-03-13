@@ -8,7 +8,7 @@ jobs:
     name: Link workspace envs to Production system env
     runs-on: ubuntu-latest
     steps:
-      - name: Link environments via Bifrost
+      - name: Link environments
         shell: bash
         env:
           ACCESS_TOKEN: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
@@ -16,70 +16,106 @@ jobs:
           SYSTEM_ENV_ID: "936898ce-cf73-4feb-827e-8a0e9d5e695e"
           TEAM_ID: "13569807"
         run: |
-          which curl || (echo "curl not found" && exit 1)
+          BIFROST="https://bifrost-premium-https-v4.gw.postman.com"
 
-          ENVS="55db4f35-9ac7-4f83-b06b-edccde48fc27 0c710169-0cbd-4a5b-86d3-544bc94a58bf bdb3cc97-1829-4c13-9f45-ef9af8512c40 742997bb-d2c1-47e8-b543-dcc97e4b9480 bbbb93e9-1d36-4db5-81f4-3da39a9f77d9 4f17a355-82b7-41d4-b0dc-0605abc9b8cf 81d23a78-1fda-40ff-9481-298fe8b8b268"
-          NAMES="Atlas-Billing Atlas-Payments Atlas-Risk Atlas-Treasury Atlas-Platform EchoAtlas ChasingCats"
+          # All 7 workspace IDs and their Production environment UUIDs
+          declare -a WS_IDS=(
+            "9741a9ce-4df3-4236-bf21-bb14795f2e74"
+            "b810d61e-7b57-480a-ab10-687bcb04ef4e"
+            "44fd816d-618b-4d67-bba0-6505364909de"
+            "602f27e3-2272-4ead-8760-9d3dbe5078f9"
+            "95332ec2-c81c-4224-86ea-53127f34d15f"
+            "40272a8d-a6c1-4d8a-bc17-6695a9f08972"
+            "a50959cb-b5b5-4e89-823d-a57e88f658f4"
+          )
+          declare -a WS_NAMES=(
+            "Atlas Billing"
+            "Atlas Payments"
+            "Atlas Risk"
+            "Atlas Treasury"
+            "Atlas Platform"
+            "EchoAtlas"
+            "ChasingCats"
+          )
+          declare -a ENV_UUIDS=(
+            "55db4f35-9ac7-4f83-b06b-edccde48fc27"
+            "0c710169-0cbd-4a5b-86d3-544bc94a58bf"
+            "bdb3cc97-1829-4c13-9f45-ef9af8512c40"
+            "742997bb-d2c1-47e8-b543-dcc97e4b9480"
+            "bbbb93e9-1d36-4db5-81f4-3da39a9f77d9"
+            "4f17a355-82b7-41d4-b0dc-0605abc9b8cf"
+            "81d23a78-1fda-40ff-9481-298fe8b8b268"
+          )
 
-          ENV_JSON=""
-          for UUID in $ENVS; do
-            if [ -n "$ENV_JSON" ]; then ENV_JSON="$ENV_JSON,"; fi
-            ENV_JSON="$ENV_JSON\"$UUID\""
-          done
-
-          echo "System Env: $SYSTEM_ENV_ID"
-          echo "Environment UUIDs: $ENV_JSON"
+          echo "=== Linking workspace environments to System Environment ==="
+          echo "System Env: $SYSTEM_ENV_ID (Production)"
           echo ""
 
-          # Attempt batch approaches
-          for METHOD in PUT POST PATCH; do
-            for PATH_PREFIX in "/v1/system-environments" "/system-environments"; do
-              FULL_PATH="$PATH_PREFIX/$SYSTEM_ENV_ID"
-              for FIELD in environmentIds environments workspace_environment_ids; do
-                echo "Trying: $METHOD $FULL_PATH ($FIELD)"
-                RESP=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X POST \
-                  "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy" \
-                  -H "Content-Type: application/json" \
-                  -H "x-access-token: $ACCESS_TOKEN" \
-                  -H "x-entity-team-id: $TEAM_ID" \
-                  -d "{\"service\":\"api-catalog\",\"method\":\"$METHOD\",\"path\":\"$FULL_PATH\",\"body\":{\"$FIELD\":[$ENV_JSON]}}")
-                echo "  HTTP $RESP: $(cat /tmp/resp.json)"
-                if [ "$RESP" = "200" ] || [ "$RESP" = "201" ] || [ "$RESP" = "204" ]; then
-                  echo "SUCCESS!"
-                  exit 0
+          for i in "${!WS_IDS[@]}"; do
+            WS_ID="${WS_IDS[$i]}"
+            WS_NAME="${WS_NAMES[$i]}"
+            ENV_UUID="${ENV_UUIDS[$i]}"
+            echo "--- $WS_NAME ---"
+            echo "  Workspace: $WS_ID"
+            echo "  Environment UUID: $ENV_UUID"
+
+            # Step 1: List environments for this workspace via direct Bifrost
+            echo "  Listing environments..."
+            LIST_RESP=$(curl -s -o /tmp/list.json -w "%{http_code}" \
+              -X POST "$BIFROST/list/environment?workspace=$WS_ID" \
+              -H "Content-Type: application/json" \
+              -H "x-access-token: $ACCESS_TOKEN" \
+              -H "x-entity-team-id: $TEAM_ID" \
+              -d '{}')
+            echo "  List status: $LIST_RESP"
+            cat /tmp/list.json | jq -r '.data[]? | "    \(.name) id=\(.id) envId=\(.environmentId // "n/a")"' 2>/dev/null || echo "  (parse failed: $(head -c 200 /tmp/list.json))"
+
+            # Step 2: Try to link this workspace environment to the system environment
+            # Try direct Bifrost endpoint patterns for creating/updating the link
+            LINK_PATHS=(
+              "POST|$BIFROST/ws/proxy|{\"service\":\"environments\",\"method\":\"PUT\",\"path\":\"/environments/$ENV_UUID/system-environment\",\"body\":{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}}"
+              "POST|$BIFROST/ws/proxy|{\"service\":\"environments\",\"method\":\"POST\",\"path\":\"/environments/$ENV_UUID/system-environment\",\"body\":{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}}"
+              "POST|$BIFROST/ws/proxy|{\"service\":\"workspaces\",\"method\":\"PUT\",\"path\":\"/workspaces/$WS_ID/environments/$ENV_UUID/system-environment\",\"body\":{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}}"
+              "POST|$BIFROST/ws/proxy|{\"service\":\"workspaces\",\"method\":\"POST\",\"path\":\"/workspaces/$WS_ID/environments/$ENV_UUID/link\",\"body\":{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}}"
+              "PUT|$BIFROST/environment/$ENV_UUID|{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}"
+              "POST|$BIFROST/environment/$ENV_UUID/link|{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}"
+              "PUT|$BIFROST/environment/$ENV_UUID/system-environment|{\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}"
+              "POST|$BIFROST/add/environment-to-system-environment?workspace=$WS_ID|{\"environmentId\":\"$ENV_UUID\",\"systemEnvironmentId\":\"$SYSTEM_ENV_ID\"}"
+              "POST|$BIFROST/ws/proxy|{\"service\":\"api-network\",\"method\":\"PUT\",\"path\":\"/system-environments/$SYSTEM_ENV_ID/environments/$ENV_UUID\",\"body\":{}}"
+              "POST|$BIFROST/ws/proxy|{\"service\":\"api-network\",\"method\":\"POST\",\"path\":\"/system-environments/$SYSTEM_ENV_ID/environments\",\"body\":{\"environmentId\":\"$ENV_UUID\",\"workspaceId\":\"$WS_ID\"}}"
+            )
+
+            LINKED=false
+            for ATTEMPT in "${LINK_PATHS[@]}"; do
+              IFS='|' read -r METHOD URL BODY <<< "$ATTEMPT"
+              RESP=$(curl -s -o /tmp/link.json -w "%{http_code}" \
+                -X "$METHOD" "$URL" \
+                -H "Content-Type: application/json" \
+                -H "x-access-token: $ACCESS_TOKEN" \
+                -H "x-entity-team-id: $TEAM_ID" \
+                -d "$BODY")
+              RESP_BODY=$(cat /tmp/link.json)
+              if [ "$RESP" = "200" ] || [ "$RESP" = "201" ] || [ "$RESP" = "204" ]; then
+                if echo "$RESP_BODY" | jq -e '.error' > /dev/null 2>&1; then
+                  echo "  $METHOD $(echo $URL | sed "s|$BIFROST||") -> $RESP (has error): $(echo $RESP_BODY | head -c 120)"
+                else
+                  echo "  LINKED via $METHOD $(echo $URL | sed "s|$BIFROST||") -> $RESP"
+                  LINKED=true
+                  break
                 fi
-              done
+              else
+                echo "  $METHOD $(echo $URL | sed "s|$BIFROST||") -> $RESP: $(echo $RESP_BODY | head -c 120)"
+              fi
             done
-          done
 
-          echo ""
-          echo "=== Individual attempts ==="
-          set +e
-          ENV_ARR=($ENVS)
-          NAME_ARR=($NAMES)
-          for i in "${!ENV_ARR[@]}"; do
-            UUID="${ENV_ARR[$i]}"
-            NAME="${NAME_ARR[$i]}"
+            if [ "$LINKED" = "false" ]; then
+              echo "  WARNING: Could not link automatically"
+            fi
             echo ""
-            echo "--- $NAME ($UUID) ---"
-            for METHOD in PUT POST; do
-              for PATH_PREFIX in "/v1/system-environments" "/system-environments"; do
-                FULL_PATH="$PATH_PREFIX/$SYSTEM_ENV_ID/environments/$UUID"
-                RESP=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X POST \
-                  "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy" \
-                  -H "Content-Type: application/json" \
-                  -H "x-access-token: $ACCESS_TOKEN" \
-                  -H "x-entity-team-id: $TEAM_ID" \
-                  -d "{\"service\":\"api-catalog\",\"method\":\"$METHOD\",\"path\":\"$FULL_PATH\",\"body\":{}}")
-                echo "  $METHOD $FULL_PATH -> $RESP: $(cat /tmp/resp.json)"
-                if [ "$RESP" = "200" ] || [ "$RESP" = "201" ] || [ "$RESP" = "204" ]; then
-                  echo "  LINKED!"
-                  break 2
-                fi
-              done
-            done
           done
 
-          echo ""
-          echo "Note: If all attempts returned errors, the Bifrost API paths may differ."
-          echo "Check the Postman UI network tab for the correct endpoint."
+      - name: Summary
+        if: always()
+        run: |
+          echo "### System Environment Linking Results" >> $GITHUB_STEP_SUMMARY
+          echo "System Environment: \`936898ce-cf73-4feb-827e-8a0e9d5e695e\` (Production)" >> $GITHUB_STEP_SUMMARY

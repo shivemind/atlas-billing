@@ -1,0 +1,125 @@
+﻿name: Link System Environments
+
+on:
+  workflow_dispatch:
+
+jobs:
+  link-environments:
+    name: Link workspace environments to Production system environment
+    runs-on: ubuntu-latest
+    env:
+      SYSTEM_ENV_ID: "936898ce-cf73-4feb-827e-8a0e9d5e695e"
+      TEAM_ID: "13569807"
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl jq
+
+      - name: Link all workspace Production environments
+        env:
+          ACCESS_TOKEN: ${{ secrets.POSTMAN_ACCESS_TOKEN }}
+          API_KEY: ${{ secrets.POSTMAN_API_KEY }}
+        run: |
+          echo "Linking workspace environments to System Environment: $SYSTEM_ENV_ID"
+
+          declare -A ENVS=(
+            ["Atlas Billing"]="55db4f35-9ac7-4f83-b06b-edccde48fc27"
+            ["Atlas Payments"]="0c710169-0cbd-4a5b-86d3-544bc94a58bf"
+            ["Atlas Risk"]="bdb3cc97-1829-4c13-9f45-ef9af8512c40"
+            ["Atlas Treasury"]="742997bb-d2c1-47e8-b543-dcc97e4b9480"
+            ["Atlas Platform"]="bbbb93e9-1d36-4db5-81f4-3da39a9f77d9"
+            ["EchoAtlas"]="4f17a355-82b7-41d4-b0dc-0605abc9b8cf"
+            ["ChasingCats"]="81d23a78-1fda-40ff-9481-298fe8b8b268"
+          )
+
+          ENV_IDS=""
+          for SERVICE in "${!ENVS[@]}"; do
+            ENV_UUID="${ENVS[$SERVICE]}"
+            if [ -n "$ENV_IDS" ]; then
+              ENV_IDS="$ENV_IDS,\"$ENV_UUID\""
+            else
+              ENV_IDS="\"$ENV_UUID\""
+            fi
+          done
+
+          echo ""
+          echo "=== Batch link attempts ==="
+
+          BATCH_PATHS=(
+            "PUT|/v1/system-environments/$SYSTEM_ENV_ID|{\"environmentIds\":[$ENV_IDS]}"
+            "POST|/v1/system-environments/$SYSTEM_ENV_ID/environments|{\"environmentIds\":[$ENV_IDS]}"
+            "PUT|/v1/system-environments/$SYSTEM_ENV_ID|{\"environments\":[$ENV_IDS]}"
+            "PATCH|/v1/system-environments/$SYSTEM_ENV_ID|{\"environmentIds\":[$ENV_IDS]}"
+            "PUT|/system-environments/$SYSTEM_ENV_ID|{\"environmentIds\":[$ENV_IDS]}"
+            "POST|/system-environments/$SYSTEM_ENV_ID/environments|{\"environmentIds\":[$ENV_IDS]}"
+            "PUT|/system-environments/$SYSTEM_ENV_ID|{\"environments\":[$ENV_IDS]}"
+            "PATCH|/system-environments/$SYSTEM_ENV_ID|{\"environmentIds\":[$ENV_IDS]}"
+            "PUT|/v1/system-environments/$SYSTEM_ENV_ID|{\"workspace_environment_ids\":[$ENV_IDS]}"
+            "PUT|/system-environments/$SYSTEM_ENV_ID|{\"workspace_environment_ids\":[$ENV_IDS]}"
+          )
+
+          LINKED=false
+          for ATTEMPT in "${BATCH_PATHS[@]}"; do
+            IFS='|' read -r METHOD PATH BODY <<< "$ATTEMPT"
+            echo ""
+            echo "Trying: $METHOD $PATH"
+            RESP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+              "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy" \
+              -H "Content-Type: application/json" \
+              -H "x-access-token: $ACCESS_TOKEN" \
+              -H "x-entity-team-id: $TEAM_ID" \
+              -d "{\"service\":\"api-catalog\",\"method\":\"$METHOD\",\"path\":\"$PATH\",\"body\":$BODY}" 2>&1)
+            HTTP_CODE=$(echo "$RESP" | grep "HTTP_STATUS:" | cut -d: -f2)
+            BODY_RESP=$(echo "$RESP" | grep -v "HTTP_STATUS:")
+            echo "  Status: $HTTP_CODE"
+            echo "  Response: $BODY_RESP"
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
+              echo "  SUCCESS - Batch linked!"
+              LINKED=true
+              break
+            fi
+          done
+
+          if [ "$LINKED" = "false" ]; then
+            echo ""
+            echo "=== Individual link attempts ==="
+            for SERVICE in "${!ENVS[@]}"; do
+              ENV_UUID="${ENVS[$SERVICE]}"
+              echo ""
+              echo "--- $SERVICE ($ENV_UUID) ---"
+
+              INDIV_PATHS=(
+                "PUT|/v1/system-environments/$SYSTEM_ENV_ID/environments/$ENV_UUID|{}"
+                "POST|/v1/system-environments/$SYSTEM_ENV_ID/environments/$ENV_UUID|{}"
+                "PUT|/v1/system-environments/$SYSTEM_ENV_ID/environments|{\"environmentId\":\"$ENV_UUID\"}"
+                "POST|/v1/system-environments/$SYSTEM_ENV_ID/environments|{\"environmentId\":\"$ENV_UUID\"}"
+                "PUT|/system-environments/$SYSTEM_ENV_ID/environments/$ENV_UUID|{}"
+                "POST|/system-environments/$SYSTEM_ENV_ID/environments/$ENV_UUID|{}"
+              )
+
+              for ATTEMPT in "${INDIV_PATHS[@]}"; do
+                IFS='|' read -r METHOD PATH BODY <<< "$ATTEMPT"
+                RESP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST \
+                  "https://bifrost-premium-https-v4.gw.postman.com/ws/proxy" \
+                  -H "Content-Type: application/json" \
+                  -H "x-access-token: $ACCESS_TOKEN" \
+                  -H "x-entity-team-id: $TEAM_ID" \
+                  -d "{\"service\":\"api-catalog\",\"method\":\"$METHOD\",\"path\":\"$PATH\",\"body\":$BODY}" 2>&1)
+                HTTP_CODE=$(echo "$RESP" | grep "HTTP_STATUS:" | cut -d: -f2)
+                BODY_RESP=$(echo "$RESP" | grep -v "HTTP_STATUS:")
+                echo "  $METHOD $PATH -> $HTTP_CODE: $BODY_RESP"
+                if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
+                  echo "  LINKED!"
+                  break
+                fi
+              done
+            done
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### System Environment Linking" >> $GITHUB_STEP_SUMMARY
+          echo "- **System Environment**: ${{ env.SYSTEM_ENV_ID }} (Production)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services**: Atlas Billing, Payments, Risk, Treasury, Platform, EchoAtlas, ChasingCats" >> $GITHUB_STEP_SUMMARY

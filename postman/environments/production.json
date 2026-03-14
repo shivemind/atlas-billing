@@ -1,0 +1,32 @@
+﻿{
+    "id":  "55db4f35-9ac7-4f83-b06b-edccde48fc27",
+    "name":  "Atlas Billing API - Production",
+    "owner":  "52400725",
+    "createdAt":  "2026-03-11T21:32:07.000Z",
+    "updatedAt":  "2026-03-14T03:05:11.000Z",
+    "values":  [
+                   {
+                       "key":  "baseUrl",
+                       "value":  "https://atlas-billing.vercel.app",
+                       "enabled":  true
+                   },
+                   {
+                       "key":  "apiVersion",
+                       "value":  "0.2.0",
+                       "enabled":  true
+                   },
+                   {
+                       "key":  "apiKey",
+                       "value":  "test-api-key",
+                       "enabled":  true,
+                       "type":  "secret"
+                   },
+                   {
+                       "key":  "githubRepo",
+                       "value":  "https://github.com/shivemind/atlas-billing",
+                       "enabled":  true
+                   }
+               ],
+    "uid":  "52400725-55db4f35-9ac7-4f83-b06b-edccde48fc27",
+    "isPublic":  false
+}

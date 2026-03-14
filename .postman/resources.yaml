@@ -1,0 +1,7 @@
+workspace:
+  id: 9741a9ce-4df3-4236-bf21-bb14795f2e74
+cloudResources:
+  collections:
+    ../postman/collections/atlas-billing-api.json: 90d5cbcc-1a03-4dd2-be30-b15d8e34c0cc
+  environments:
+    ../postman/environments/production.json: 55db4f35-9ac7-4f83-b06b-edccde48fc27
